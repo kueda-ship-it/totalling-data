@@ -27,9 +27,17 @@ export interface ServiceRecord {
     startTime: string; // 作業開始時間
     endTime: string; // 作業終了時間
     durationMinutes: number; // 作業時間（分）
+    raw: Record<string, string>; // 全カラムの生データ
+
+    // Performance optimizations: pre-parsed values
+    parsedYear: string;
+    parsedMonthLabel: string;
+    isValidYear: boolean;
+    isValidMonth: boolean;
 }
 
 export type AggregatedData = {
+    headers: string[]; // 利用可能な全ヘッダー
     byPerson: { name: string; count: number; percentage?: number }[];
     byCategory: { name: string; count: number }[];
     byIssueCategory: { name: string; count: number }[];

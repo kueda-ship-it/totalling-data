@@ -7,32 +7,54 @@ interface Props {
 
 export const DataTable: React.FC<Props> = ({ data }) => {
     const [searchTerm, setSearchTerm] = useState('');
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
-    const itemsPerPage = 20;
+    const itemsPerPage = 30; // Increased slightly for better density
 
-    const filteredData = data.filter(record =>
-        Object.values(record).some(val =>
-            String(val).toLowerCase().includes(searchTerm.toLowerCase())
-        )
-    );
+    // Debounce search term to avoid filtering 100k+ records on every keystroke
+    React.useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearchTerm(searchTerm);
+            setCurrentPage(1);
+        }, 400); // 400ms delay
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
+
+    const filteredData = React.useMemo(() => {
+        if (!debouncedSearchTerm) return data;
+        const lowerSearch = debouncedSearchTerm.toLowerCase();
+        return data.filter(record => {
+            // Only search specific important fields to speed up
+            return (
+                record.buildingName.toLowerCase().includes(lowerSearch) ||
+                record.person.toLowerCase().includes(lowerSearch) ||
+                record.issueDetails.toLowerCase().includes(lowerSearch) ||
+                record.issueCategory.toLowerCase().includes(lowerSearch)
+            );
+        });
+    }, [data, debouncedSearchTerm]);
 
     const totalPages = Math.ceil(filteredData.length / itemsPerPage);
     const startIndex = (currentPage - 1) * itemsPerPage;
-    const paginatedData = filteredData.slice(startIndex, startIndex + itemsPerPage);
+    const paginatedData = React.useMemo(() =>
+        filteredData.slice(startIndex, startIndex + itemsPerPage),
+        [filteredData, startIndex]);
 
     return (
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mt-8">
             <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-semibold text-gray-800">Raw Data (データ一覧)</h3>
+                <div>
+                    <h3 className="text-lg font-semibold text-gray-800">Raw Data (データ一覧)</h3>
+                    {searchTerm !== debouncedSearchTerm && (
+                        <span className="text-xs text-blue-500 animate-pulse">Filtering...</span>
+                    )}
+                </div>
                 <input
                     type="text"
-                    placeholder="検索..."
-                    className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                    placeholder="物件名、対応者、内容で検索..."
+                    className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none w-80"
                     value={searchTerm}
-                    onChange={(e) => {
-                        setSearchTerm(e.target.value);
-                        setCurrentPage(1);
-                    }}
+                    onChange={(e) => setSearchTerm(e.target.value)}
                 />
             </div>
 
@@ -48,7 +70,7 @@ export const DataTable: React.FC<Props> = ({ data }) => {
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                        {paginatedData.map((record, idx) => (
+                        {paginatedData.map((record: ServiceRecord, idx: number) => (
                             <tr key={idx} className="hover:bg-gray-50 transition-colors">
                                 <td className="px-4 py-3 text-sm text-gray-900 truncate max-w-[200px]">{record.buildingName}</td>
                                 <td className="px-4 py-3 text-sm text-gray-500">{record.date}</td>

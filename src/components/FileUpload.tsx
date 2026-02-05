@@ -2,7 +2,7 @@ import React, { useCallback } from 'react';
 import { Upload } from 'lucide-react';
 
 interface FileUploadProps {
-    onFileUpload: (content: string) => void;
+    onFileUpload: (content: string, filename?: string) => void;
 }
 
 export const FileUpload: React.FC<FileUploadProps> = ({ onFileUpload }) => {
@@ -10,11 +10,11 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileUpload }) => {
         (e: React.DragEvent<HTMLDivElement>) => {
             e.preventDefault();
             const file = e.dataTransfer.files[0];
-            if (file && file.type === 'text/plain') {
+            if (file) {
                 const reader = new FileReader();
                 reader.onload = (event) => {
                     const text = event.target?.result as string;
-                    onFileUpload(text);
+                    onFileUpload(text, file.name);
                 };
                 reader.readAsText(file);
             }
@@ -28,7 +28,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileUpload }) => {
             const reader = new FileReader();
             reader.onload = (event) => {
                 const text = event.target?.result as string;
-                onFileUpload(text);
+                onFileUpload(text, file.name);
             };
             reader.readAsText(file);
         }
@@ -42,7 +42,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileUpload }) => {
         >
             <input
                 type="file"
-                accept=".txt"
+                accept=".txt,.csv"
                 onChange={handleFileChange}
                 className="hidden"
                 id="file-upload"
@@ -50,10 +50,10 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileUpload }) => {
             <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
                 <Upload className="w-12 h-12 text-gray-400 mb-4" />
                 <span className="text-lg font-medium text-gray-700">
-                    Drop your .txt file here, or click to browse
+                    ファイルをドロップするか、クリックして選択してください
                 </span>
                 <span className="text-sm text-gray-500 mt-2">
-                    Supports legacy system export format
+                    .csv または .txt 形式をサポートしています
                 </span>
             </label>
         </div>

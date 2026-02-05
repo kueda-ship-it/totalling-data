@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { FileUpload } from './FileUpload';
 import { PersonChart } from './charts/PersonChart';
 import { TrendChart } from './charts/TrendChart';
@@ -6,21 +6,87 @@ import { DataTable } from './DataTable';
 import { ChartExportMenu } from './charts/ChartExportMenu';
 import { parseCSV } from '../lib/parser';
 import { calculateStatistics } from '../lib/statistics';
+import { listDatasets, loadDataset, saveDataset, deleteDataset, type DatasetMetadata } from '../lib/storage';
+import { CustomAnalysis } from './CustomAnalysis';
+import { Clock, Trash2, Database, BarChart2, Table } from 'lucide-react';
 import type { ServiceRecord } from '../types/data';
 
 export const Dashboard: React.FC = () => {
     const [data, setData] = useState<ServiceRecord[]>([]);
     const [timeScale, setTimeScale] = useState<'year' | 'month' | 'week'>('month');
     const [showTable, setShowTable] = useState(false);
+    const [savedDatasets, setSavedDatasets] = useState<DatasetMetadata[]>([]);
+    const [isProcessing, setIsProcessing] = useState(false);
+
     const dayOfWeekRef = React.useRef<HTMLDivElement>(null);
     const performanceRef = React.useRef<HTMLDivElement>(null);
 
-    const handleFileUpload = (content: string) => {
-        const parsedData = parseCSV(content);
-        setData(parsedData);
+    useEffect(() => {
+        refreshDatasetList();
+    }, []);
+
+    const refreshDatasetList = async () => {
+        try {
+            const list = await listDatasets();
+            setSavedDatasets(list.sort((a, b) => b.timestamp - a.timestamp));
+        } catch (err) {
+            console.error('Failed to load saved datasets', err);
+        }
     };
 
-    const stats = useMemo(() => calculateStatistics(data), [data]);
+    const handleFileUpload = async (content: string, filename?: string) => {
+        setIsProcessing(true);
+        try {
+            const parsedData = parseCSV(content);
+            setData(parsedData);
+
+            // Auto-save to IndexedDB
+            const name = filename || `Upload ${new Date().toLocaleString()}`;
+            await saveDataset(name, parsedData);
+            await refreshDatasetList();
+        } catch (err) {
+            console.error('Failed to process upload', err);
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleSelectSaved = async (id: number) => {
+        setIsProcessing(true);
+        try {
+            const result = await loadDataset(id);
+            if (result) {
+                setData(result.data);
+            }
+        } catch (err) {
+            console.error('Failed to load dataset', err);
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleDeleteSaved = async (e: React.MouseEvent, id: number) => {
+        e.stopPropagation();
+        if (!confirm('このデータを削除しますか？')) return;
+
+        try {
+            await deleteDataset(id);
+            await refreshDatasetList();
+        } catch (err) {
+            console.error('Failed to delete dataset', err);
+        }
+    };
+
+    const stats = useMemo(() => {
+        const s = calculateStatistics(data);
+        console.log('Statistics calculated:', {
+            total: data.length,
+            byYear: s.byYear.length,
+            byMonth: s.byMonth.length,
+            byWeek: s.byWeek.length
+        });
+        return s;
+    }, [data]);
 
     const trendData = useMemo(() => {
         if (timeScale === 'year') return stats.byYear;
@@ -39,39 +105,84 @@ export const Dashboard: React.FC = () => {
             <header className="mb-8 flex justify-between items-start">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Log Analysis Dashboard</h1>
-                    <p className="text-gray-600 mt-2">Upload your access log CSV to visualize trends.</p>
+                    <p className="text-gray-600 mt-2">Upload or select previous access log CSV to visualize trends.</p>
                 </div>
                 {data.length > 0 && (
-                    <button
-                        onClick={() => setShowTable(!showTable)}
-                        className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm font-medium"
-                    >
-                        {showTable ? 'Show Charts' : 'Show Data Table'}
-                    </button>
+                    <div className="flex space-x-4">
+                        <button
+                            onClick={() => setShowTable(!showTable)}
+                            className="flex items-center px-6 py-2 bg-white text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm font-medium"
+                        >
+                            {showTable ? (
+                                <><BarChart2 size={18} className="mr-2" /> Show Charts</>
+                            ) : (
+                                <><Table size={18} className="mr-2" /> Show Data Table</>
+                            )}
+                        </button>
+                        <button
+                            onClick={() => { setData([]); setShowTable(false); }}
+                            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm font-medium"
+                        >
+                            Select Other Data
+                        </button>
+                    </div>
                 )}
             </header>
 
             {data.length === 0 ? (
-                <div className="max-w-xl mx-auto mt-20">
-                    <FileUpload onFileUpload={handleFileUpload} />
+                <div className="max-w-4xl mx-auto space-y-12 mt-12">
+                    <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200">
+                        <h2 className="text-xl font-semibold mb-6 flex items-center text-gray-800">
+                            <Database className="mr-2 text-blue-500" size={24} />
+                            新規アップロード
+                        </h2>
+                        {isProcessing ? (
+                            <div className="flex flex-col items-center justify-center py-12">
+                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+                                <p className="text-gray-600">ファイルを処理中...</p>
+                            </div>
+                        ) : (
+                            <FileUpload onFileUpload={handleFileUpload} />
+                        )}
+                    </div>
+
+                    {savedDatasets.length > 0 && (
+                        <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200">
+                            <h2 className="text-xl font-semibold mb-6 flex items-center text-gray-800">
+                                <Clock className="mr-2 text-indigo-500" size={24} />
+                                過去のデータを選択
+                            </h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {savedDatasets.map((ds) => (
+                                    <div
+                                        key={ds.id}
+                                        onClick={() => handleSelectSaved(ds.id)}
+                                        className="group p-4 border border-gray-100 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all cursor-pointer relative"
+                                    >
+                                        <div className="flex justify-between items-start">
+                                            <div className="flex-1 min-w-0">
+                                                <h4 className="font-medium text-gray-900 truncate pr-8">{ds.name}</h4>
+                                                <div className="mt-1 flex items-center text-xs text-gray-500 space-x-3">
+                                                    <span>{new Date(ds.timestamp).toLocaleDateString()}</span>
+                                                    <span>{ds.recordCount.toLocaleString()} 件</span>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={(e) => handleDeleteSaved(e, ds.id)}
+                                                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors opacity-0 group-hover:opacity-100"
+                                                title="削除"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             ) : (
                 <div className="space-y-8">
-                    <div className="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-                        <div className="flex space-x-8">
-                            <div>
-                                <span className="text-gray-500 text-sm">Total Records:</span>
-                                <span className="ml-2 text-2xl font-bold text-blue-600">{data.length.toLocaleString()}</span>
-                            </div>
-                        </div>
-                        <button
-                            onClick={() => setData([])}
-                            className="text-sm text-red-500 hover:text-red-700 font-medium px-3 py-1 hover:bg-red-50 rounded"
-                        >
-                            Reset Data
-                        </button>
-                    </div>
-
                     {!showTable ? (
                         <>
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -107,8 +218,8 @@ export const Dashboard: React.FC = () => {
                                                 key={scale}
                                                 onClick={() => setTimeScale(scale)}
                                                 className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${timeScale === scale
-                                                        ? 'bg-white text-blue-600 shadow-sm'
-                                                        : 'text-gray-500 hover:text-gray-700'
+                                                    ? 'bg-white text-blue-600 shadow-sm'
+                                                    : 'text-gray-500 hover:text-gray-700'
                                                     }`}
                                             >
                                                 {scale === 'year' ? 'Yearly' : scale === 'month' ? 'Monthly' : 'Weekly'}
@@ -150,6 +261,8 @@ export const Dashboard: React.FC = () => {
                                     <p className="text-[10px] text-gray-400 mt-4">※ Counts represent records with valid duration. Only members with 100+ records shown.</p>
                                 </div>
                             </div>
+
+                            <CustomAnalysis data={data} headers={stats.headers} />
                         </>
                     ) : (
                         <DataTable data={data} />
